@@ -156,6 +156,7 @@ so manually move them:
 * javadoc/resources/inherit.gif
 * javadoc/serialized-form.html
 * javadoc/stylesheet.css
+* sdk.iml
 
 Moved Files:
 ------------

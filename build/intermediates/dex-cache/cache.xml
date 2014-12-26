@@ -16,6 +16,13 @@
         <dex dex="/home/dani/AndroidStudioProjects/Detectordecartas/app/build/intermediates/pre-dexed/debug/classes-b338ea58e96679f621c5f4af4a94a9ed3ee7f900.jar" />
     </item>
     <item
+        jar="/home/dani/AndroidStudioProjects/Detectordecartas/app/build/intermediates/exploded-aar/Detectordecartas/openCVLibrary2410/unspecified/classes.jar"
+        jumboMode="false"
+        revision="21.1.2"
+        sha1="58eda760ec0730d7c4d2067af0f91a994b5b130d">
+        <dex dex="/home/dani/AndroidStudioProjects/Detectordecartas/app/build/intermediates/pre-dexed/debug/classes-9df7aaa900835965f7480e0f9698a4a7995eaad5.jar" />
+    </item>
+    <item
         jar="/home/dani/AndroidStudioProjects/Detectordecartas/app/build/intermediates/exploded-aar/com.android.support/support-v4/21.0.3/libs/internal_impl-21.0.3.jar"
         jumboMode="false"
         revision="21.1.2"
