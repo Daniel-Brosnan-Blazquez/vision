@@ -200,6 +200,13 @@ public class MainActivity  extends Activity implements CvCameraViewListener2 {
         // Number of the card
         int nCard = 0;
 
+        // Variables for the treatment of the area of an element of a card
+        double areaValue;
+        double maxAreaValue;
+        double distanceToDouble;
+        double distanceToOne;
+        boolean incorrectArea = false;
+
         /*
          * ITERATORS
          */
@@ -297,6 +304,8 @@ public class MainActivity  extends Activity implements CvCameraViewListener2 {
             Log.i (TAG, "LIGHT RED: " + Core.countNonZero(lightRedHsvMask));
 
             if (green > 0 && yellow > 0 && darkRed + lightRed > 0){
+
+                // Apply masks for the first decision filter
                 Core.inRange(cardHsv, new Scalar(12, 30, 60), new Scalar(150, 255, 255), cardElements);
                 darkRedHsvMask.copyTo(cardElements, darkRedHsvMask);
                 lightRedHsvMask.copyTo(cardElements, lightRedHsvMask);
@@ -312,18 +321,61 @@ public class MainActivity  extends Activity implements CvCameraViewListener2 {
                 Imgproc.findContours(cardElementsContours, cardInsideContours, mHierarchy, Imgproc.RETR_EXTERNAL, Imgproc.CHAIN_APPROX_SIMPLE);
                 cardInsideContours = approximateContours (cardInsideContours, 1, -1);
                     
-                Log.i (TAG, "The number of found contours is:" + cardInsideContours.size());
-
                 eachMop = cardInsideContours.iterator();
                 nCard = 0;
+                areaValue = 0;
                 while (eachMop.hasNext()){
                     contour = eachMop.next();
+
                     // If the number of points determining the contour
                     // is grater than 20 increment the number of the
                     // card
                     if (contour.total() > 20){
                         nCard++;
+
+                        Log.i (TAG, "The area of the contour is: " + Imgproc.contourArea (contour));
+                        if (areaValue == 0){
+                            areaValue = Imgproc.contourArea (contour);
+                        }
+                        else if (incorrectArea == false){
+                            if (areaValue > Imgproc.contourArea (contour)){
+                                maxAreaValue = areaValue;
+                                areaValue = Imgproc.contourArea (contour);
+                            }
+                            else{
+                                maxAreaValue = Imgproc.contourArea (contour);
+                            }
+                            distanceToDouble = Math.abs (maxAreaValue - areaValue*2);
+                            distanceToOne = Math.abs (maxAreaValue - areaValue);
+                            if (distanceToDouble < distanceToOne){
+                                incorrectArea = true;
+                            }
+                        }
+
                     }
+                }
+
+                Log.i (TAG, "The number of found contours is:" + nCard);
+
+                if (incorrectArea == true){
+                    cardElements.setTo(new Scalar (0));
+                    // Apply mask for the second decision filter
+                    greenHsvMask.copyTo(cardElements, greenHsvMask);
+
+                    // Dilate the card image to reduce noise
+                    elementSize = 25;
+                    element = Imgproc.getStructuringElement(Imgproc.MORPH_RECT,
+                                                            new Size(elementSize, elementSize));
+                    Imgproc.dilate(cardElements, cardElements,element);
+
+                    // Get the contours of the card image
+                    cardElementsContours.release();
+                    cardElementsContours = cardElements.clone();
+                    cardInsideContours.clear();
+                    Imgproc.findContours(cardElementsContours, cardInsideContours, mHierarchy, Imgproc.RETR_EXTERNAL, Imgproc.CHAIN_APPROX_SIMPLE);
+                    cardInsideContours = approximateContours (cardInsideContours, 1, -1);
+
+                    nCard = cardInsideContours.size()*2 + 1;
                 }
 
                 card = BASTOS;
