@@ -48,7 +48,7 @@ public class MainActivity  extends Activity implements CvCameraViewListener2 {
     private String[] CARD_NAMES = {"BASTOS","ESPADAS","COPAS","OROS","SIN DETERMINAR"};
 
     // Debugging constants
-    private static final int DEBUG = 1;
+    private static final int DEBUG = 0;
 
     private CameraBridgeViewBase mOpenCvCameraView;
 
@@ -147,6 +147,7 @@ public class MainActivity  extends Activity implements CvCameraViewListener2 {
         Mat gCard;
         Mat gCardFC;
         List<Mat> cCards = new ArrayList<>();
+        List<Mat> cCardsOrig = new ArrayList<>();
         int card;
         Mat cardHsv;
         Mat cardElements;
@@ -159,6 +160,7 @@ public class MainActivity  extends Activity implements CvCameraViewListener2 {
          * ELEMENTS FOR IMAGE PROCESSING
          */
         // Array list of detected contours in the first processing
+        List<MatOfPoint> preCardContours = new ArrayList<>();
         List<MatOfPoint> cardContours = new ArrayList<>();
         // Array list of detected contours inside each card
         List<MatOfPoint> cardInsideContours = new ArrayList<>();
@@ -217,6 +219,12 @@ public class MainActivity  extends Activity implements CvCameraViewListener2 {
         int j = 0;
 
         /*
+         * TEXT ELEMENTS
+         */
+        double margin;
+        double textSize;
+
+        /*
          * IMAGE PROCESSING
          */
         // Binarizing the image to obtain easier the contours (Dilate
@@ -228,17 +236,17 @@ public class MainActivity  extends Activity implements CvCameraViewListener2 {
         Imgproc.threshold(dilatedGi, processedGi, 150, 255, Imgproc.THRESH_OTSU);
 
         // Get the contours
-        Imgproc.findContours(processedGi, cardContours, mHierarchy, Imgproc.RETR_EXTERNAL, Imgproc.CHAIN_APPROX_SIMPLE);
+        Imgproc.findContours(processedGi, preCardContours, mHierarchy, Imgproc.RETR_EXTERNAL, Imgproc.CHAIN_APPROX_SIMPLE);
 
         // Approximate the contours to a polygon
-        cardContours = approximateContours (cardContours, 10, 4);
+        preCardContours = approximateContours (preCardContours, 10, 4);
         // Draw contours on the mask filling them
-        Imgproc.drawContours(maskCardContours, cardContours, -1, new Scalar(255), -1);
+        Imgproc.drawContours(maskCardContours, preCardContours, -1, new Scalar(255), -1);
         // Extracting only the content of the contours
         ci.copyTo(processedCi, maskCardContours);
 
         // Extracting cards with the rectangle around
-        eachMop = cardContours.iterator();
+        eachMop = preCardContours.iterator();
         i = 0;
         while (eachMop.hasNext()){
 
@@ -248,11 +256,14 @@ public class MainActivity  extends Activity implements CvCameraViewListener2 {
             contourSize = getSize (contour.toList());
             if (contourSize > MINIMUM_CARD_SIZE){
                 thickness = getThickness (contourSize);
-                Imgproc.drawContours(processedCi, cardContours, i, new Scalar (255,255,255,255), thickness);
+                cardContours.add(contour);
+                Imgproc.drawContours(processedCi, preCardContours, i, new Scalar (255,255,255,255), thickness);
 
                 rowsCols = getRowsCols(contour);
-                cCard = processedCi.submat(rowsCols[0], rowsCols[1], rowsCols[2], rowsCols[3]);
+                    cCard = processedCi.submat(rowsCols[0], rowsCols[1], rowsCols[2], rowsCols[3]);
                 cCards.add (cCard);
+                cCard = ci.submat(rowsCols[0], rowsCols[1], rowsCols[2], rowsCols[3]);
+                cCardsOrig.add (cCard);
             }
             i++;
         }
@@ -262,10 +273,6 @@ public class MainActivity  extends Activity implements CvCameraViewListener2 {
         i = 0;
         while (eachCard.hasNext()){
             cCard = eachCard.next();
-
-            size = cCard.size();
-            rows = (int) allSize.height;
-            cols = (int) allSize.width;
 
             // Card to HSV
             cardHsv = cCard.clone();
@@ -476,13 +483,24 @@ public class MainActivity  extends Activity implements CvCameraViewListener2 {
             // If the card was classified, draw the contours with the corresponding colour
             if (card != NONE){
                 Imgproc.drawContours(ci, cardContours, i, contourColour, CONTOUR_THICKNESS);
+                size = cCardsOrig.get(i).size();
+                rows = (int) size.height;
+                cols = (int) size.width;
+
+                margin = cols*0.4;
+                textSize = cols*0.01;
+                Log.i (TAG, "\n\n******************TEXT SIZE: " + textSize + " ******************\n\n");
+                Core.putText(cCardsOrig.get(i), Integer.toString (nCard), new Point (margin, margin), 3, textSize, contourColour, CONTOUR_THICKNESS);
                 Imgproc.drawContours(cCard, cardInsideContours, -1, RED, CONTOUR_THICKNESS);
             }
 
             if (DEBUG == 1){
+                rows = (int) allSize.height;
+                cols = (int) allSize.width;
+
                 // Set at the corner of the image in gray scale the zoomed card detected
                 zoomCorner = gi.submat(0, rows / 2 - rows / 10, 0, cols / 2 - cols / 10);
-                Imgproc.resize(cardElements, zoomCorner, zoomCorner.size());
+                Imgproc.resize(cardDebug, zoomCorner, zoomCorner.size());
 
                 // Set at the corner of the image with color the zoomed card detected
                 zoomCorner = ci.submat(0, rows / 2 - rows / 10, 0, cols / 2 - cols / 10);
@@ -501,7 +519,7 @@ public class MainActivity  extends Activity implements CvCameraViewListener2 {
         /*mHierarchy.release();
         ci.release();
         gray_image.release();*/
-        return gi;
+        return ci;
     }
 
     protected int[] getRowsCols (MatOfPoint contour) {
