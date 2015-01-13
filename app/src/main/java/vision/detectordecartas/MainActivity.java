@@ -301,7 +301,7 @@ public class MainActivity  extends Activity implements CvCameraViewListener2 {
                 darkRedHsvMask.copyTo(cardElements, darkRedHsvMask);
                 lightRedHsvMask.copyTo(cardElements, lightRedHsvMask);
 
-                // Open the card image to reduce noise
+                // Dilate the card image to reduce noise
                 elementSize = 3;
                 element = Imgproc.getStructuringElement(Imgproc.MORPH_DILATE,
                                                         new Size(elementSize, elementSize));
@@ -333,11 +333,18 @@ public class MainActivity  extends Activity implements CvCameraViewListener2 {
                 /* Apply only blue mask */
                 blueHsvMask.copyTo(cardElements, blueHsvMask);
 
-                // Open the card image to reduce noise
-                elementSize = 3;
-                element = Imgproc.getStructuringElement(Imgproc.MORPH_OPEN,
+                // Dilate the card image to reduce noise
+                elementSize = 10;
+                element = Imgproc.getStructuringElement(Imgproc.MORPH_DILATE,
                                                         new Size(elementSize, elementSize));
-                Imgproc.morphologyEx(cardElements, cardElements,Imgproc.MORPH_OPEN,element);
+                Imgproc.dilate(cardElements, cardElements,element);
+
+                // Get the contours of the card image
+                cardElementsContours = cardElements.clone();
+                Imgproc.findContours(cardElementsContours, cardInsideContours, mHierarchy, Imgproc.RETR_EXTERNAL, Imgproc.CHAIN_APPROX_SIMPLE);
+                cardInsideContours = approximateContours (cardInsideContours, 1, -1);
+
+                nCard = cardInsideContours.size();
 
                 card = ESPADAS;
                 contourColour = BLUE;
