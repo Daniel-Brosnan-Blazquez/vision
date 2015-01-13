@@ -29,17 +29,26 @@ import java.util.List;
 
 public class MainActivity  extends Activity implements CvCameraViewListener2 {
     private static final String TAG = "VISION::Activity";
-    private static final Scalar CONTOUR_COLOR = new Scalar(255,0,0,255);
+
+    // Drawing constants
     private static final int CONTOUR_THICKNESS = 2;
-    private static final Scalar CARD_CONTOUR_COLOR = new Scalar(0,0,255,255);
+    private static final Scalar YELLOW = new Scalar(255,255,0,255);
+    private static final Scalar BLUE = new Scalar(0,0,255,255);
+    private static final Scalar RED = new Scalar(255,0,0,255);
+    private static final Scalar GREEN = new Scalar(0,255,0,255);
+    // Image processing constants
     private static final int MINIMUM_CARD_SIZE = 17000;
-    private static final int MINIMUM_NUMBER_COLOR = 50;
-    private static final int NONE = 4;
+    private static final int MINIMUM_NUMBER_COLOR = 20;
+    // Classification constants
     private static final int BASTOS = 0;
     private static final int ESPADAS = 1;
     private static final int COPAS = 2;
     private static final int OROS = 3;
-    private String[] cardNames = new String[20];
+    private static final int NONE = 4;
+    private String[] CARD_NAMES = {"BASTOS","ESPADAS","COPAS","OROS","SIN DETERMINAR"};
+
+    // Debugging constants
+    private static final int DEBUG = 1;
 
     private CameraBridgeViewBase mOpenCvCameraView;
 
@@ -137,25 +146,37 @@ public class MainActivity  extends Activity implements CvCameraViewListener2 {
         Mat cCard;
         Mat gCard;
         Mat gCardFC;
-        List<Mat> cCards = new ArrayList<Mat>();
+        List<Mat> cCards = new ArrayList<>();
         int card;
-        cardNames[BASTOS] = "BASTOS";
-        cardNames[ESPADAS] = "ESPADAS";
-        cardNames[COPAS] = "COPAS";
-        cardNames[OROS] = "OROS";
-        cardNames[NONE] = "SIN DETERMINAR";
+        Mat cardHsv;
+        Mat cardElements;
+        Mat cardElementsContours;
+        Mat cardElementsNoRed;
+        Mat cardElementsNoRedContours;
+        Mat cardDebug;
 
         /*
          * ELEMENTS FOR IMAGE PROCESSING
          */
         // Array list of detected contours in the first processing
-        List<MatOfPoint> cardContours = new ArrayList<MatOfPoint>();
+        List<MatOfPoint> cardContours = new ArrayList<>();
         // Array list of detected contours inside each card
-        List<MatOfPoint> cardInsideContours = new ArrayList<MatOfPoint>();
+        List<MatOfPoint> cardInsideContours = new ArrayList<>();
+        List<MatOfPoint> cardInsideContoursNoRed = new ArrayList<>();
         // Matrix of hierarchy of contours
         Mat mHierarchy = new Mat();
-        // Matrix to be return
-        int dilationSize;
+
+        // HSV color matrix 
+        Mat cCardHSV;
+
+        // HSV mask
+        Mat greenHsvMask;
+        Mat yellowHsvMask;
+        Mat blueHsvMask;
+        Mat darkRedHsvMask;
+        Mat lightRedHsvMask;
+
+        int elementSize;
         Mat element;
         MatOfPoint contour;
         int[] rowsCols;
@@ -171,22 +192,31 @@ public class MainActivity  extends Activity implements CvCameraViewListener2 {
         int lightRed;
         int darkRed;
         int yellow;
+        int total;
+
+        // Drawing elements
+        Scalar contourColour = RED;
+
+        // Number of the card
+        int nCard = 0;
 
         /*
          * ITERATORS
          */
         // Iterator for the lists of MatOfPoint elements
         Iterator<MatOfPoint> eachMop;
+        Iterator<Mat> eachCard;
         int i = 0;
+        int j = 0;
 
         /*
          * IMAGE PROCESSING
          */
-        // Binarizing the image to easier obtain the contours (Dilate
+        // Binarizing the image to obtain easier the contours (Dilate
         // the image before to reduce noise)
-        dilationSize = 4;
+        elementSize = 4;
         element = Imgproc.getStructuringElement(Imgproc.MORPH_RECT,
-                new Size(dilationSize, dilationSize));
+                new Size(elementSize, elementSize));
         Imgproc.dilate (gi, dilatedGi, element);
         Imgproc.threshold(dilatedGi, processedGi, 150, 255, Imgproc.THRESH_OTSU);
 
@@ -220,127 +250,192 @@ public class MainActivity  extends Activity implements CvCameraViewListener2 {
             i++;
         }
 
-        // If there were found contours, process them
-        if (cCards.size() > 0) {
-            cCard = cCards.get(0);
+        // Classify cards
+        eachCard = cCards.iterator();
+        i = 0;
+        while (eachCard.hasNext()){
+            cCard = eachCard.next();
+
             size = cCard.size();
             rows = (int) allSize.height;
             cols = (int) allSize.width;
 
-            /*// Dilate the card image to reduce noise
-            dilationSize = 5;
-            element = Imgproc.getStructuringElement(Imgproc.MORPH_DILATE,
-                                                    new Size(dilationSize, dilationSize));
-            Imgproc.dilate (cCard, cCard, element);*/
-
-            // // Erosion
-            // dilationSize = 5;
-            // element = Imgproc.getStructuringElement(Imgproc.MORPH_ERODE,
-            //                                         new Size(dilationSize, dilationSize));
-            // Imgproc.erode (cCard, cCard, element);
-
             // Card to HSV
-            Mat cCardHSV = cCard.clone();
-            Imgproc.cvtColor(cCard,cCardHSV,Imgproc.COLOR_RGBA2RGB);
-            Imgproc.cvtColor(cCardHSV,cCardHSV,Imgproc.COLOR_RGB2HSV);
+            cardHsv = cCard.clone();
+            Imgproc.cvtColor(cCard,cardHsv,Imgproc.COLOR_RGBA2RGB);
+            Imgproc.cvtColor(cardHsv,cardHsv,Imgproc.COLOR_RGB2HSV);
 
-            Mat cCardHSV2 = cCardHSV.clone();
+            // Initializing matrices for processing
+            greenHsvMask  = new Mat (cardHsv.size(), CvType.CV_8U, new Scalar(0));
+            yellowHsvMask = new Mat (cardHsv.size(), CvType.CV_8U, new Scalar(0));
+            blueHsvMask = new Mat (cardHsv.size(), CvType.CV_8U, new Scalar(0));
+            darkRedHsvMask = new Mat (cardHsv.size(), CvType.CV_8U, new Scalar(0));
+            lightRedHsvMask = new Mat (cardHsv.size(), CvType.CV_8U, new Scalar(0));
+            cardElements = new Mat (cCard.size(), CvType.CV_8U, new Scalar(0));
+            cardElementsNoRed = new Mat (cCard.size(), CvType.CV_8U, new Scalar(0));
+            cardDebug = new Mat (cCard.size(), CvType.CV_8U, new Scalar(0));
+
             // GREEN
-            Core.inRange(cCardHSV, new Scalar(35, 10, 20), new Scalar(80, 255, 255), cCardHSV2);
-            green = assignValue (Core.countNonZero(cCardHSV2));
-            Log.i (TAG, "GREEN: " + green);
+            Core.inRange(cardHsv, new Scalar(35, 40, 50), new Scalar(80, 255, 255), greenHsvMask);
+            green = assignValue (Core.countNonZero(greenHsvMask));
+            Log.i (TAG, "GREEN: " + Core.countNonZero(greenHsvMask));
             // YELLOW
-            Core.inRange(cCardHSV, new Scalar(15, 100, 100), new Scalar(35, 255, 255), cCardHSV2);
-            yellow = assignValue (Core.countNonZero(cCardHSV2));
-            Log.i (TAG, "YELLOW: " + yellow);
-            // DARK RED
-            Core.inRange(cCardHSV, new Scalar(170, 100, 100), new Scalar(180, 255, 255), cCardHSV2);
-            darkRed = assignValue (Core.countNonZero(cCardHSV2));
-            Log.i (TAG, "DARK RED: " + darkRed);
-            // LIGHT RED
-            Core.inRange(cCardHSV, new Scalar(0, 40, 60), new Scalar(15, 255, 255), cCardHSV2);
-            lightRed = assignValue (Core.countNonZero(cCardHSV2));
-            Log.i (TAG, "LIGHT RED: " + lightRed);
+            Core.inRange(cardHsv, new Scalar(15, 100, 160), new Scalar(35, 255, 255), yellowHsvMask);
+            yellow = assignValue (Core.countNonZero(yellowHsvMask));
+            Log.i (TAG, "YELLOW: " + Core.countNonZero(yellowHsvMask));
             // BLUE
-            Core.inRange(cCardHSV, new Scalar(75, 20, 80), new Scalar(135, 255, 255), cCardHSV2);
-            blue = assignValue (Core.countNonZero(cCardHSV2));
-            Log.i (TAG, "BLUE: " + blue);
+            Core.inRange(cardHsv, new Scalar(75, 80, 80), new Scalar(135, 255, 255), blueHsvMask);
+            blue = assignValue (Core.countNonZero(blueHsvMask));
+            Log.i (TAG, "BLUE: " + Core.countNonZero(blueHsvMask));
+            // DARK RED
+            Core.inRange(cardHsv, new Scalar(150, 120, 120), new Scalar(180, 255, 255), darkRedHsvMask);
+            darkRed = assignValue (Core.countNonZero(darkRedHsvMask));
+            Log.i (TAG, "DARK RED: " + Core.countNonZero(darkRedHsvMask));
+            // LIGHT RED
+            Core.inRange(cardHsv, new Scalar(0, 120, 140), new Scalar(12, 255, 255), lightRedHsvMask);
+            lightRed = assignValue (Core.countNonZero(lightRedHsvMask));
+            Log.i (TAG, "LIGHT RED: " + Core.countNonZero(lightRedHsvMask));
 
-            // GREEN,RED y YELLOW
-            //Core.inRange(cCardHSV, new Scalar(0, 5, 5), new Scalar(60, 255, 255), cCardHSV2);
-            //Log.i (TAG, "GREEN,RED y YELLOW: " + Core.countNonZero(cCardHSV2));
+            if (green > 0 && yellow > 0 && darkRed + lightRed > 0){
+                Core.inRange(cardHsv, new Scalar(12, 30, 60), new Scalar(150, 255, 255), cardElements);
+                darkRedHsvMask.copyTo(cardElements, darkRedHsvMask);
+                lightRedHsvMask.copyTo(cardElements, lightRedHsvMask);
 
-            try {
-                Thread.sleep(1000, 0);
-            }catch(InterruptedException e) {
-                e.printStackTrace();
+                // Open the card image to reduce noise
+                elementSize = 3;
+                element = Imgproc.getStructuringElement(Imgproc.MORPH_DILATE,
+                                                        new Size(elementSize, elementSize));
+                Imgproc.dilate(cardElements, cardElements,element);
+
+                // Get the contours of the card image
+                cardElementsContours = cardElements.clone();
+                Imgproc.findContours(cardElementsContours, cardInsideContours, mHierarchy, Imgproc.RETR_EXTERNAL, Imgproc.CHAIN_APPROX_SIMPLE);
+                cardInsideContours = approximateContours (cardInsideContours, 1, -1);
+                    
+                Log.i (TAG, "The number of found contours is:" + cardInsideContours.size());
+
+                eachMop = cardInsideContours.iterator();
+                nCard = 0;
+                while (eachMop.hasNext()){
+                    contour = eachMop.next();
+                    // If the number of points determining the contour
+                    // is grater than 20 increment the number of the
+                    // card
+                    if (contour.total() > 20){
+                        nCard++;
+                    }
+                }
+
+                card = BASTOS;
+                contourColour = GREEN;
+            }
+            else if (blue > 0 && yellow > 0 && blue > (darkRed)){
+                /* Apply only blue mask */
+                blueHsvMask.copyTo(cardElements, blueHsvMask);
+
+                // Open the card image to reduce noise
+                elementSize = 3;
+                element = Imgproc.getStructuringElement(Imgproc.MORPH_OPEN,
+                                                        new Size(elementSize, elementSize));
+                Imgproc.morphologyEx(cardElements, cardElements,Imgproc.MORPH_OPEN,element);
+
+                card = ESPADAS;
+                contourColour = BLUE;
+            }
+            else{
+                /* Apply yellow and red masks */
+                yellowHsvMask.copyTo(cardElements, yellowHsvMask);
+                darkRedHsvMask.copyTo(cardElements, darkRedHsvMask);
+                lightRedHsvMask.copyTo(cardElements, lightRedHsvMask);
+
+                /* Apply all the masks less the corresponding to the red colours */ 
+                yellowHsvMask.copyTo(cardElementsNoRed, yellowHsvMask);
+
+                /* 
+                 * CHECK DIFFERENCE BETWEEN CONTOURS WITH AND WITHOUT THE RED CHANNEL 
+                 */
+                // Open the card image to reduce noise
+                elementSize = 3;
+                element = Imgproc.getStructuringElement(Imgproc.MORPH_OPEN,
+                                                        new Size(elementSize, elementSize));
+                Imgproc.morphologyEx(cardElementsNoRed, cardElementsNoRed,Imgproc.MORPH_OPEN,element);
+
+                // Get the contours of the card image
+                cardElementsNoRedContours = cardElementsNoRed.clone();
+                Imgproc.findContours(cardElementsNoRedContours, cardInsideContoursNoRed, mHierarchy, Imgproc.RETR_EXTERNAL, Imgproc.CHAIN_APPROX_SIMPLE);
+                cardInsideContoursNoRed = approximateContours (cardInsideContoursNoRed, 4, -1);
+
+                Log.i (TAG, "The number of found contours without red is:" + cardInsideContoursNoRed.size());
+
+                // Open the card image to reduce noise
+                elementSize = 3;
+                element = Imgproc.getStructuringElement(Imgproc.MORPH_OPEN,
+                                                        new Size(elementSize, elementSize));
+                Imgproc.morphologyEx(cardElements, cardElements,Imgproc.MORPH_OPEN,element);
+
+                // Get the contours of the card image
+                cardElementsContours = cardElements.clone();
+                Imgproc.findContours(cardElementsContours, cardInsideContours, mHierarchy, Imgproc.RETR_EXTERNAL, Imgproc.CHAIN_APPROX_SIMPLE);
+                cardInsideContours = approximateContours (cardInsideContours, 4, -1);
+
+                Log.i (TAG, "The number of found contours with red is:" + cardInsideContours.size());
+
+                if (yellow > 0 && lightRed > 0 && 
+                    cardInsideContours.size() == cardInsideContoursNoRed.size()){
+                    card = OROS;
+                    contourColour = YELLOW;
+                    nCard = cardInsideContours.size();
+                }
+                else if (yellow > 0 && darkRed > 0 && lightRed > 0){
+                    cardElements.setTo(new Scalar(0));
+                    darkRedHsvMask.copyTo(cardElements, darkRedHsvMask);
+
+                    // Open the card image to reduce noise
+                    elementSize = 6;
+                    element = Imgproc.getStructuringElement(Imgproc.MORPH_OPEN,
+                                                            new Size(elementSize, elementSize));
+                    Imgproc.morphologyEx(cardElements, cardElements,Imgproc.MORPH_OPEN,element);
+
+                    // Get the contours of the card image
+                    cardElementsContours = cardElements.clone();
+                    cardInsideContours.clear();
+                    Imgproc.findContours(cardElementsContours, cardInsideContours, mHierarchy, Imgproc.RETR_EXTERNAL, Imgproc.CHAIN_APPROX_SIMPLE);
+                    cardInsideContours = approximateContours (cardInsideContours, 4, -1);
+                    
+                    Log.i (TAG, "The number of found contours is:" + cardInsideContours.size());
+
+                    nCard = cardInsideContours.size()/2;
+                    card = COPAS;
+                    contourColour = RED;
+                }
+                else{
+                    card = NONE;
+                }
+            }
+            Log.i (TAG, "\n\n******************CARD: " + CARD_NAMES[card] + " numero: " + nCard + "******************\n\n");
+
+            // If the card was classified, draw the contours with the corresponding colour
+            if (card != NONE){
+                Imgproc.drawContours(ci, cardContours, i, contourColour, CONTOUR_THICKNESS);
+                Imgproc.drawContours(cCard, cardInsideContours, -1, RED, CONTOUR_THICKNESS);
             }
 
-            if (green > 0 && yellow > 0 && darkRed > 0 && lightRed > 0)
-                card = BASTOS;
-            else if (blue > 0 && yellow > 0 && blue > (darkRed + lightRed))
-                card = ESPADAS;
-            else if (yellow > 0 && darkRed > 0 && lightRed > 0)
-                card = COPAS;
-            else if (yellow > 0 && lightRed > 0)
-                card = OROS;
-            else
-                card = NONE;
+            if (DEBUG == 1){
+                // Set at the corner of the image in gray scale the zoomed card detected
+                zoomCorner = gi.submat(0, rows / 2 - rows / 10, 0, cols / 2 - cols / 10);
+                Imgproc.resize(cardElements, zoomCorner, zoomCorner.size());
 
-            Log.i (TAG, "******************\n\nCARD: " + cardNames[card] + "\n\n******************");
+                // Set at the corner of the image with color the zoomed card detected
+                zoomCorner = ci.submat(0, rows / 2 - rows / 10, 0, cols / 2 - cols / 10);
+                Imgproc.resize(cCard, zoomCorner, zoomCorner.size());
 
+                // Set at the corner of the image with color the zoomed card detected
+                zoomCorner = ciHSV.submat(0, rows / 2 - rows / 10, 0, cols / 2 - cols / 10);
+                Imgproc.resize(cardHsv, zoomCorner, zoomCorner.size());
+                // Log.i (TAG, "Found contours on the card: " + cardInsideContours.size());
+            }
 
-            /*Imgproc.cvtColor(cCardHSV,cCardHSV, Imgproc.COLOR_GRAY2RGB, 4);
-            Imgproc.cvtColor(cCardHSV,cCardHSV,Imgproc.COLOR_RGB2HSV);*/
-
-            // // Dilate the card image to reduce noise
-            // dilationSize = 5;
-            // element = Imgproc.getStructuringElement(Imgproc.MORPH_ERODE,
-            //                                         new Size(dilationSize, dilationSize));
-            // Imgproc.erode (cCardHSV, cCardHSV, element);
-
-
-            // Get the card image in gray scale and binarize it
-/*            gCard=new Mat (cCard.size(), CvType.CV_8U);
-            Imgproc.cvtColor (cCardHSV, gCard, Imgproc.COLOR_RGBA2GRAY);*/
-
-            //            Imgproc.Canny (gCard, gCard, 10,100);
-
-            //Imgproc.threshold(gCard, gCard, 150, 255, Imgproc.THRESH_OTSU);
-
-            // // // Dilate the card in gray scale to reduce noise
-            // // dilationSize = 4;
-            // // element = Imgproc.getStructuringElement(Imgproc.MORPH_RECT,
-            // //                                         new Size(dilationSize, dilationSize));
-            // // Imgproc.dilate (gCard, gCard, element);
-
-            // // dilationSize = 10;
-            // // element = Imgproc.getStructuringElement(Imgproc.MORPH_RECT,
-            // //                                         new Size(dilationSize, dilationSize));
-            // // Imgproc.erode (gCard, gCard, element);
-
-            // // //            Imgproc.threshold(gCard, gCard, 150, 255, Imgproc.THRESH_BINARY);
-            
-            // Get the contours of the card image
-            /*gCardFC = gCard.clone();
-            Imgproc.findContours(gCardFC, cardInsideContours, mHierarchy, Imgproc.RETR_LIST, Imgproc.CHAIN_APPROX_SIMPLE);
-            cardInsideContours = approximateContours (cardInsideContours, 4, -1);
-
-            // Draw contours
-            Imgproc.drawContours(cCard, cardInsideContours, -1, CARD_CONTOUR_COLOR, CONTOUR_THICKNESS);
-          */
-            // Set at the corner of the image in gray scale the zoomed card detected
-            zoomCorner = gi.submat(0, rows / 2 - rows / 10, 0, cols / 2 - cols / 10);
-            Imgproc.resize(cCardHSV2, zoomCorner, zoomCorner.size());
-
-            // Set at the corner of the image with color the zoomed card detected
-            zoomCorner = ci.submat(0, rows / 2 - rows / 10, 0, cols / 2 - cols / 10);
-            Imgproc.resize(cCard, zoomCorner, zoomCorner.size());
-
-            // Set at the corner of the image with color the zoomed card detected
-            zoomCorner = ciHSV.submat(0, rows / 2 - rows / 10, 0, cols / 2 - cols / 10);
-            Imgproc.resize(cCardHSV, zoomCorner, zoomCorner.size());
-            // Log.i (TAG, "Found contours on the card: " + cardInsideContours.size());
+            i++;
         }
 
         // Free memory
@@ -465,5 +560,11 @@ public class MainActivity  extends Activity implements CvCameraViewListener2 {
         }
         return ret;
     }
+
+    // protected int[] getContours (){
+        
+        
+        
+    // }
 }
 
