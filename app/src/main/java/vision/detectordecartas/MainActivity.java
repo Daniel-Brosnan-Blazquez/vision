@@ -48,7 +48,7 @@ public class MainActivity  extends Activity implements CvCameraViewListener2 {
     private String[] CARD_NAMES = {"BASTOS","ESPADAS","COPAS","OROS","SIN DETERMINAR"};
 
     // Debugging constants
-    private static final int DEBUG = 0;
+    private static final int DEBUG = 1;
 
     private CameraBridgeViewBase mOpenCvCameraView;
 
@@ -207,7 +207,7 @@ public class MainActivity  extends Activity implements CvCameraViewListener2 {
         double maxAreaValue;
         double distanceToDouble;
         double distanceToOne;
-        boolean incorrectArea = false;
+        boolean twoElementsJoint = false;
 
         /*
          * ITERATORS
@@ -261,7 +261,7 @@ public class MainActivity  extends Activity implements CvCameraViewListener2 {
 
                 rowsCols = getRowsCols(contour);
                     cCard = processedCi.submat(rowsCols[0], rowsCols[1], rowsCols[2], rowsCols[3]);
-                cCards.add (cCard);
+                cCards.add(cCard);
                 cCard = ci.submat(rowsCols[0], rowsCols[1], rowsCols[2], rowsCols[3]);
                 cCardsOrig.add (cCard);
             }
@@ -313,7 +313,7 @@ public class MainActivity  extends Activity implements CvCameraViewListener2 {
             if (green > 0 && yellow > 0 && darkRed + lightRed > 0){
 
                 // Apply masks for the first decision filter
-                Core.inRange(cardHsv, new Scalar(12, 30, 60), new Scalar(150, 255, 255), cardElements);
+                Core.inRange(cardHsv, new Scalar(12, 60, 60), new Scalar(150, 255, 255), cardElements);
                 darkRedHsvMask.copyTo(cardElements, darkRedHsvMask);
                 lightRedHsvMask.copyTo(cardElements, lightRedHsvMask);
 
@@ -323,6 +323,9 @@ public class MainActivity  extends Activity implements CvCameraViewListener2 {
                                                         new Size(elementSize, elementSize));
                 Imgproc.dilate(cardElements, cardElements,element);
 
+
+                cardElements.copyTo(cardDebug, cardElements);
+
                 // Get the contours of the card image
                 cardElementsContours = cardElements.clone();
                 Imgproc.findContours(cardElementsContours, cardInsideContours, mHierarchy, Imgproc.RETR_EXTERNAL, Imgproc.CHAIN_APPROX_SIMPLE);
@@ -331,7 +334,7 @@ public class MainActivity  extends Activity implements CvCameraViewListener2 {
                 eachMop = cardInsideContours.iterator();
                 nCard = 0;
                 areaValue = 0;
-                while (eachMop.hasNext()){
+                while (eachMop.hasNext() && twoElementsJoint == false){
                     contour = eachMop.next();
 
                     // If the number of points determining the contour
@@ -339,32 +342,36 @@ public class MainActivity  extends Activity implements CvCameraViewListener2 {
                     // card
                     if (contour.total() > 20){
                         nCard++;
-
+                        
                         Log.i (TAG, "The area of the contour is: " + Imgproc.contourArea (contour));
                         if (areaValue == 0){
                             areaValue = Imgproc.contourArea (contour);
                         }
-                        else if (incorrectArea == false){
-                            if (areaValue > Imgproc.contourArea (contour)){
-                                maxAreaValue = areaValue;
-                                areaValue = Imgproc.contourArea (contour);
-                            }
-                            else{
-                                maxAreaValue = Imgproc.contourArea (contour);
-                            }
-                            distanceToDouble = Math.abs (maxAreaValue - areaValue*2);
-                            distanceToOne = Math.abs (maxAreaValue - areaValue);
-                            if (distanceToDouble < distanceToOne){
-                                incorrectArea = true;
-                            }
-                        }
 
+                        // Check if two elements were joint within a contour
+                        if (areaValue > Imgproc.contourArea (contour)){
+                            maxAreaValue = areaValue;
+                            areaValue = Imgproc.contourArea (contour);
+                        }
+                        else{
+                            maxAreaValue = Imgproc.contourArea (contour);
+                        }
+                        // If the value of the area of the bigger
+                        // element is nearer to the value of the
+                        // area of the minimum element by two than
+                        // to the area of the minimum element, two elements were joint
+                        distanceToDouble = Math.abs (maxAreaValue - areaValue*2);
+                        distanceToOne = Math.abs (maxAreaValue - areaValue);
+                        if (distanceToDouble < distanceToOne){
+                            twoElementsJoint = true;
+                        }
                     }
                 }
 
                 Log.i (TAG, "The number of found contours is:" + nCard);
 
-                if (incorrectArea == true){
+                if (twoElementsJoint == true){
+                    Log.i (TAG, "Found two joint elements");
                     cardElements.setTo(new Scalar (0));
                     // Apply mask for the second decision filter
                     greenHsvMask.copyTo(cardElements, greenHsvMask);
@@ -490,7 +497,7 @@ public class MainActivity  extends Activity implements CvCameraViewListener2 {
                 margin = cols*0.4;
                 textSize = cols*0.01;
                 Log.i (TAG, "\n\n******************TEXT SIZE: " + textSize + " ******************\n\n");
-                Core.putText(cCardsOrig.get(i), Integer.toString (nCard), new Point (margin, margin), 3, textSize, contourColour, CONTOUR_THICKNESS);
+                Core.putText(cCardsOrig.get(i), Integer.toString(nCard), new Point(margin, margin), 3, textSize, contourColour, CONTOUR_THICKNESS);
                 Imgproc.drawContours(cCard, cardInsideContours, -1, RED, CONTOUR_THICKNESS);
             }
 
