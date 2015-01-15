@@ -32,6 +32,7 @@ public class MainActivity  extends Activity implements CvCameraViewListener2 {
 
     // Drawing constants
     private static final int CONTOUR_THICKNESS = 2;
+    private static final Scalar BLACK = new Scalar(0,0,0,255);
     private static final Scalar YELLOW = new Scalar(255,255,0,255);
     private static final Scalar BLUE = new Scalar(0,0,255,255);
     private static final Scalar RED = new Scalar(255,0,0,255);
@@ -48,7 +49,7 @@ public class MainActivity  extends Activity implements CvCameraViewListener2 {
     private String[] CARD_NAMES = {"BASTOS","ESPADAS","COPAS","OROS","SIN DETERMINAR"};
 
     // Debugging constants
-    private static final int DEBUG = 1;
+    private static final int DEBUG = 0;
 
     private CameraBridgeViewBase mOpenCvCameraView;
 
@@ -208,6 +209,7 @@ public class MainActivity  extends Activity implements CvCameraViewListener2 {
         double distanceToDouble;
         double distanceToOne;
         boolean twoElementsJoint = false;
+        boolean notSimilarAreas = false;
 
         /*
          * ITERATORS
@@ -289,6 +291,14 @@ public class MainActivity  extends Activity implements CvCameraViewListener2 {
             cardElementsNoRed = new Mat (cCard.size(), CvType.CV_8U, new Scalar(0));
             cardDebug = new Mat (cCard.size(), CvType.CV_8U, new Scalar(0));
 
+            // Initializing contours
+            cardInsideContoursNoRed.clear();
+            cardInsideContours.clear();
+
+            // Initializing flags
+            twoElementsJoint = false;
+            notSimilarAreas = false;
+
             // GREEN
             Core.inRange(cardHsv, new Scalar(35, 40, 50), new Scalar(80, 255, 255), greenHsvMask);
             green = assignValue (Core.countNonZero(greenHsvMask));
@@ -310,7 +320,7 @@ public class MainActivity  extends Activity implements CvCameraViewListener2 {
             lightRed = assignValue (Core.countNonZero(lightRedHsvMask));
             Log.i (TAG, "LIGHT RED: " + Core.countNonZero(lightRedHsvMask));
 
-            if (green > 0 && yellow > 0 && darkRed + lightRed > 0){
+            if (green > 0 && yellow > 0 && darkRed + lightRed > 0 && blue == 0){
 
                 // Apply masks for the first decision filter
                 Core.inRange(cardHsv, new Scalar(12, 60, 60), new Scalar(150, 255, 255), cardElements);
@@ -383,7 +393,6 @@ public class MainActivity  extends Activity implements CvCameraViewListener2 {
                     Imgproc.dilate(cardElements, cardElements,element);
 
                     // Get the contours of the card image
-                    cardElementsContours.release();
                     cardElementsContours = cardElements.clone();
                     cardInsideContours.clear();
                     Imgproc.findContours(cardElementsContours, cardInsideContours, mHierarchy, Imgproc.RETR_EXTERNAL, Imgproc.CHAIN_APPROX_SIMPLE);
@@ -395,7 +404,7 @@ public class MainActivity  extends Activity implements CvCameraViewListener2 {
                 card = BASTOS;
                 contourColour = GREEN;
             }
-            else if (blue > 0 && yellow > 0 && blue > (darkRed)){
+            else if (blue > 0 && yellow > 0 && blue > (darkRed) && green == 0){
                 /* Apply only blue mask */
                 blueHsvMask.copyTo(cardElements, blueHsvMask);
 
@@ -410,12 +419,46 @@ public class MainActivity  extends Activity implements CvCameraViewListener2 {
                 Imgproc.findContours(cardElementsContours, cardInsideContours, mHierarchy, Imgproc.RETR_EXTERNAL, Imgproc.CHAIN_APPROX_SIMPLE);
                 cardInsideContours = approximateContours (cardInsideContours, 1, -1);
 
-                nCard = cardInsideContours.size();
+                eachMop = cardInsideContours.iterator();
+                nCard = 0;
+                areaValue = 0;
+                while (eachMop.hasNext() && notSimilarAreas == false){
+                    contour = eachMop.next();
 
-                card = ESPADAS;
-                contourColour = BLUE;
+                    Log.i (TAG, "The area of the contour is: " + Imgproc.contourArea (contour));
+                    if (areaValue == 0){
+                        areaValue = Imgproc.contourArea (contour);
+                    }
+
+                    // Check if the areas are similar
+                    if (areaValue > Imgproc.contourArea (contour)){
+                        maxAreaValue = areaValue;
+                        areaValue = Imgproc.contourArea (contour);
+                    }
+                    else{
+                        maxAreaValue = Imgproc.contourArea (contour);
+                    }
+                    // If the value of the area of the bigger
+                    // element is nearer to the value of the
+                    // area of the minimum element by two than
+                    // to the area of the minimum element, the areas are not similar
+                    distanceToDouble = Math.abs (maxAreaValue - areaValue*2);
+                    distanceToOne = Math.abs (maxAreaValue - areaValue);
+                    if (distanceToDouble < distanceToOne){
+                        notSimilarAreas = true;
+                    }
+                }
+
+                if (notSimilarAreas == false){
+                    nCard = cardInsideContours.size();
+
+                    card = ESPADAS;
+                    contourColour = BLUE;
+                }else{
+                    card = NONE;
+                }
             }
-            else{
+            else if (green == 0){
                 /* Apply yellow and red masks */
                 yellowHsvMask.copyTo(cardElements, yellowHsvMask);
                 darkRedHsvMask.copyTo(cardElements, darkRedHsvMask);
@@ -485,11 +528,18 @@ public class MainActivity  extends Activity implements CvCameraViewListener2 {
                     card = NONE;
                 }
             }
+            else{
+                card = NONE;
+            }
+
+            if (nCard > 7 || nCard == 0){
+                card = NONE;
+            }
+
             Log.i (TAG, "\n\n******************CARD: " + CARD_NAMES[card] + " numero: " + nCard + "******************\n\n");
 
             // If the card was classified, draw the contours with the corresponding colour
             if (card != NONE){
-                Imgproc.drawContours(ci, cardContours, i, contourColour, CONTOUR_THICKNESS);
                 size = cCardsOrig.get(i).size();
                 rows = (int) size.height;
                 cols = (int) size.width;
@@ -499,7 +549,10 @@ public class MainActivity  extends Activity implements CvCameraViewListener2 {
                 Log.i (TAG, "\n\n******************TEXT SIZE: " + textSize + " ******************\n\n");
                 Core.putText(cCardsOrig.get(i), Integer.toString(nCard), new Point(margin, margin), 3, textSize, contourColour, CONTOUR_THICKNESS);
                 Imgproc.drawContours(cCard, cardInsideContours, -1, RED, CONTOUR_THICKNESS);
+            }else{
+                contourColour = BLACK;
             }
+            Imgproc.drawContours(ci, cardContours, i, contourColour, CONTOUR_THICKNESS);
 
             if (DEBUG == 1){
                 rows = (int) allSize.height;
@@ -522,10 +575,6 @@ public class MainActivity  extends Activity implements CvCameraViewListener2 {
             i++;
         }
 
-        // Free memory
-        /*mHierarchy.release();
-        ci.release();
-        gray_image.release();*/
         return ci;
     }
 
@@ -645,10 +694,5 @@ public class MainActivity  extends Activity implements CvCameraViewListener2 {
         return ret;
     }
 
-    // protected int[] getContours (){
-        
-        
-        
-    // }
 }
 
